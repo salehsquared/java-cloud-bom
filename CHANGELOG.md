@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.132.0](https://www.github.com/googleapis/java-cloud-bom/compare/0.131.0...v0.132.0) (2020-07-22)
+
+
+### Features
+
+* add dashboard for shared dependency version checking ([#730](https://www.github.com/googleapis/java-cloud-bom/issues/730)) ([0cefa70](https://www.github.com/googleapis/java-cloud-bom/commit/0cefa704cab795b2be42da42d018d8da2bb44d83))
+
+
+### Bug Fixes
+
+* "Could not find artifact com.google.cloud.tools:dependencies-parent:pom:1.4.4-SNAPSHOT" in dashboard ([#737](https://www.github.com/googleapis/java-cloud-bom/issues/737)) ([54039f4](https://www.github.com/googleapis/java-cloud-bom/commit/54039f449c32400d7bd9693d07a0b046f9b07e6a))
+
+
+### Dependencies
+
+* update dependency com.google.cloud:google-cloud-bigquery to v1.116.7 ([#738](https://www.github.com/googleapis/java-cloud-bom/issues/738)) ([ed6e36d](https://www.github.com/googleapis/java-cloud-bom/commit/ed6e36d2aec0c65979c62d40333cb84d90733bd5))
+* update dependency com.google.cloud:google-cloud-bigquerystorage-bom to v1.1.1 ([#726](https://www.github.com/googleapis/java-cloud-bom/issues/726)) ([2b1037e](https://www.github.com/googleapis/java-cloud-bom/commit/2b1037e75c950f5a3dd656f0de9f85402cdc3378))
+
 ## [0.131.0](https://www.github.com/googleapis/java-cloud-bom/compare/0.130.0...v0.131.0) (2020-07-13)
 
 
