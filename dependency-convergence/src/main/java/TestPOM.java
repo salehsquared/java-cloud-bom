@@ -46,12 +46,27 @@ import org.eclipse.aether.artifact.Artifact;
 
 public class TestPOM {
     private static final String basePath = "https://repo1.maven.org/maven2";
-    private static final String DEFAULT_GROUP_ID = "com.google.cloud";
     private static final Map<Artifact, String> artifactToDepsVersion = new HashMap<>();
 
+    /**
+     * These are the only four possibilities for any given client libraries.
+     */
     private static final List<Artifact> successfulClientLibraries = new ArrayList<>();
     private static final List<Artifact> librariesWithoutSharedDeps = new ArrayList<>();
     private static final List<Artifact> librariesWithBadSharedDepsVersion = new ArrayList<>();
+    private static final List<Artifact> unfindableClientLibraries = new ArrayList<>();
+
+    private static final List[] librariesClassified = new List[]{
+            successfulClientLibraries, librariesWithoutSharedDeps,
+            librariesWithBadSharedDepsVersion, unfindableClientLibraries
+    };
+
+    private static final String[] outputStatements = {
+            "SUCCESS - The following %s libraries had the latest version of google-cloud-shared-dependencies: ",
+            "FAIL - The following %s libraries did not contain any version of google-cloud-shared-dependencies: ",
+            "FAIL - The following %s libraries had outdated versions of google-cloud-shared-dependencies: ",
+            "FAIL - The following %s libraries had unfindable POM files: "
+    };
 
     public static void main(String[] args) throws ParseException, URISyntaxException, TemplateException, MavenRepositoryException, IOException {
         Arguments arguments = Arguments.readCommandLine(args);
@@ -63,39 +78,43 @@ public class TestPOM {
             classify(artifact, latestSharedDependenciesVersion);
         }
 
-        if (librariesWithoutSharedDeps.size() > 0 || librariesWithBadSharedDepsVersion.size() > 0) {
-            System.out.println("------------------------------------------------------------------------------------");
-            System.out.println("The following " + successfulClientLibraries.size() + " libraries had the latest version of google-cloud-shared-dependencies: ");
-            for (Artifact artifact : successfulClientLibraries) {
-                System.out.println(artifact.getArtifactId() + ":" + artifact.getVersion());
+        for (int i = 0; i < librariesClassified.length; i++) {
+            List<Artifact> clientLibraryList = (List<Artifact>) librariesClassified[i];
+            if (clientLibraryList.size() <= 0) {
+                continue;
             }
             System.out.println("------------------------------------------------------------------------------------");
-            System.out.println("The following " + librariesWithoutSharedDeps.size() + " libraries did not contain any version of google-cloud-shared-dependencies:");
-            for (Artifact artifact : librariesWithoutSharedDeps) {
-                System.out.println(artifact.getArtifactId() + ":" + artifact.getVersion());
+            String output = outputStatements[i];
+            System.out.println(String.format(output, clientLibraryList.size()));
+            for (Artifact artifact : clientLibraryList) {
+                System.out.print(artifact.getArtifactId() + ":" + artifact.getVersion());
+                String foundDepsVersion = artifactToDepsVersion.get(artifact);
+                if (foundDepsVersion == null || foundDepsVersion.isEmpty()) {
+                    foundDepsVersion = "";
+                } else {
+                    foundDepsVersion = " Version Found: " + foundDepsVersion;
+                }
+                System.out.println(foundDepsVersion);
             }
-            System.out.println("------------------------------------------------------------------------------------");
-            System.out.println("The following " + librariesWithBadSharedDepsVersion.size() + " libraries had outdated versions of google-cloud-shared-dependencies:");
-            for (Artifact artifact : librariesWithBadSharedDepsVersion) {
-                System.out.println(artifact.getArtifactId() + ":" + artifact.getVersion()
-                        + ". Version found: " + artifactToDepsVersion.get(artifact));
-            }
-            System.out.println("------------------------------------------------------------------------------------");
+        }
+
+        if (managedDependencies.size() > successfulClientLibraries.size()) {
             System.out.println("Total dependencies checked: " + managedDependencies.size());
             System.exit(1);
             return;
         }
+        System.out.println("Total dependencies checked: " + managedDependencies.size());
         System.out.println("All found libraries were successful!");
         System.exit(0);
     }
 
     private static void classify(Artifact artifact, String latestSharedDependenciesVersion) {
         String sharedDepsVersion = sharedDependencyVersion(artifact);
-        if(sharedDepsVersion == null) {
-            
-        } else {
-            artifactToDepsVersion.put(artifact, sharedDepsVersion);
+        if (sharedDepsVersion == null) {
+            unfindableClientLibraries.add(artifact);
+            return;
         }
+        artifactToDepsVersion.put(artifact, sharedDepsVersion);
         if (sharedDepsVersion.isEmpty()) {
             librariesWithoutSharedDeps.add(artifact);
         } else if (sharedDepsVersion.equals(latestSharedDependenciesVersion)) {
@@ -110,40 +129,77 @@ public class TestPOM {
     }
 
     @VisibleForTesting
-    static List<Artifact> generate(Path bomFile) throws IOException, TemplateException, URISyntaxException, MavenRepositoryException {
+    static List<Artifact> generate(Path bomFile) throws MavenRepositoryException {
         Preconditions.checkArgument(Files.isRegularFile(bomFile, new LinkOption[0]), "The input BOM %s is not a regular file", bomFile);
         Preconditions.checkArgument(Files.isReadable(bomFile), "The input BOM %s is not readable", bomFile);
         return generate(Bom.readBom(bomFile));
     }
 
-    private static List<Artifact> generate(Bom bom) throws IOException, TemplateException, URISyntaxException {
+    private static List<Artifact> generate(Bom bom) {
         List<Artifact> managedDependencies = new ArrayList(bom.getManagedDependencies());
         managedDependencies.removeIf((a) -> {
-            return a.getArtifactId().contains("google-cloud-core") || a.getArtifactId().contains("bigtable-emulator") || !"com.google.cloud".equals(a.getGroupId());
+            return a.getArtifactId().contains("google-cloud-core")
+                    || a.getArtifactId().contains("bigtable-emulator")
+                    || !"com.google.cloud".equals(a.getGroupId());
         });
         return managedDependencies;
     }
 
     private static String sharedDependencyVersion(Artifact artifact) {
-        String groupPath = artifact.getGroupId().replace('.', '/');
-        String pomPath = getPomFileURL(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
-        String parentPath = basePath + groupPath + "/" + artifact.getArtifactId() + "-parent/" + artifact.getVersion() + "/" + artifact.getArtifactId() + "-parent-" + artifact.getVersion() + ".pom";
-        String depsBomPath = basePath + groupPath + "/" + artifact.getArtifactId() + "-deps-bom/" + artifact.getVersion() + "/" + artifact.getArtifactId() + "-deps-bom-" + artifact.getVersion() + ".pom";
-        String version = getSharedDepsVersionFromURL(parentPath);
-        if (version != null) {
-            return version;
-        } else {
-            version = getSharedDepsVersionFromURL(pomPath);
-            if (version != null) {
-                return version;
-            } else {
-                version = getSharedDepsVersionFromURL(depsBomPath);
-                if (version != null) {
-                   return version;
+        String groupId = artifact.getGroupId();
+        String artifactId = artifact.getArtifactId();
+        String version = getLatestVersion(groupId, artifactId);
+        String pomURL = getPomFileURL(groupId, artifactId, version);
+        String pomLocation =  artifactId.contains("google-cloud-bigtable-bom")
+                ? "/google-cloud-bigtable-deps-bom/pom.xml" : "/pom.xml";
+        File file = new File("pomFile.xml");
+        String repoURL = null;
+        try {
+            URL url = new URL(pomURL);
+            FileUtils.copyURLToFile(url, file);
+            MavenXpp3Reader read = new MavenXpp3Reader();
+            Model model = read.read(new FileReader(file));
+            if (model.getScm() == null || model.getScm().getUrl() == null) {
+                System.out.println("Unable to find scm section for: " + artifact);
+                if(model.getDependencyManagement() == null) {
+                    return "";
+                }
+                Iterator<Dependency> iter = model.getDependencyManagement().getDependencies().iterator();
+                while (iter.hasNext()) {
+                    Dependency dep = iter.next();
+                    if ("com.google.cloud".equals(dep.getGroupId()) && "google-cloud-shared-dependencies".equals(dep.getArtifactId())) {
+                        return dep.getVersion();
+                    }
+                }
+                return "";
+            }
+
+            repoURL = model.getScm().getUrl();
+            String gitPomURL = repoURL.replace("github.com", "raw.githubusercontent.com");
+            gitPomURL += ("/v" + version + pomLocation);;
+
+            url = new URL(gitPomURL);
+            FileUtils.copyURLToFile(url, file);
+
+            read = new MavenXpp3Reader();
+            model = read.read(new FileReader(file));
+
+            if(model.getDependencyManagement() == null) {
+                return "";
+            }
+
+            Iterator<Dependency> iter = model.getDependencyManagement().getDependencies().iterator();
+            while (iter.hasNext()) {
+                Dependency dep = iter.next();
+                if ("com.google.cloud".equals(dep.getGroupId()) && "google-cloud-shared-dependencies".equals(dep.getArtifactId())) {
+                    return dep.getVersion();
                 }
             }
+        } catch (XmlPullParserException | IOException ignored) {
+            System.out.println("Artifact: " + artifactId + ". Original repo URL: " + repoURL);
+            System.out.println("Secondary Repo URL: " + pomURL);
         }
-        return "";
+        return null;
     }
 
     private static String getSharedDepsVersionFromURL(String pomURL) {
@@ -158,10 +214,10 @@ public class TestPOM {
                 return null;
             }
 
-            Iterator var5 = model.getDependencyManagement().getDependencies().iterator();
+            Iterator<Dependency> iter = model.getDependencyManagement().getDependencies().iterator();
 
-            while (var5.hasNext()) {
-                Dependency dep = (Dependency) var5.next();
+            while (iter.hasNext()) {
+                Dependency dep = iter.next();
                 if ("com.google.cloud".equals(dep.getGroupId()) && "google-cloud-shared-dependencies".equals(dep.getArtifactId())) {
                     return dep.getVersion();
                 }
@@ -197,21 +253,18 @@ public class TestPOM {
         return null;
     }
 
-    private static String getLatestVersion(Artifact artifact) {
-        return getLatestVersion(artifact.getGroupId(), artifact.getArtifactId());
-    }
-
-    private static String getMetadataURL(Artifact artifact) {
-        return getMetaDataURL(artifact.getGroupId(), artifact.getArtifactId());
-    }
-
     private static String getMetaDataURL(String groupId, String artifactId) {
         String groupPath = groupId.replace('.', '/');
-        return basePath + groupPath + "/" + artifactId + "/maven-metadata.xml";
+        return basePath + "/" + groupPath
+                + "/" + artifactId
+                + "/maven-metadata.xml";
     }
 
     private static String getPomFileURL(String groupId, String artifactId, String version) {
         String groupPath = groupId.replace('.', '/');
-        return basePath + groupPath + "/" + artifactId + "/" + version + "/" + artifactId + "-" + version + ".pom";
+        return basePath + "/" + groupPath
+                + "/" + artifactId
+                + "/" + version
+                + "/" + artifactId + "-" + version + ".pom";
     }
 }
