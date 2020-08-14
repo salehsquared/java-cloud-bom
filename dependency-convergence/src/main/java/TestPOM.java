@@ -109,7 +109,7 @@ public class TestPOM {
     }
 
     private static void classify(Artifact artifact, String latestSharedDependenciesVersion) {
-        String sharedDepsVersion = sharedDependencyVersion(artifact);
+        String sharedDepsVersion = sharedDependencyVersion(true, artifact);
         if (sharedDepsVersion == null) {
             unfindableClientLibraries.add(artifact);
             return;
@@ -145,13 +145,13 @@ public class TestPOM {
         return managedDependencies;
     }
 
-    private static String sharedDependencyVersion(Artifact artifact) {
+    private static String sharedDependencyVersion(boolean useParentPom, Artifact artifact) {
         String groupId = artifact.getGroupId();
         String artifactId = artifact.getArtifactId();
         String version = getLatestVersion(groupId, artifactId);
-        String pomURL = getPomFileURL(groupId, artifactId, version);
-        String pomLocation =  artifactId.contains("google-cloud-bigtable-bom")
-                ? "/google-cloud-bigtable-deps-bom/pom.xml" : "/pom.xml";
+        String pomURL = useParentPom ? getParentPomFileURL(groupId, artifactId, version) :
+            getPomFileURL(groupId, artifactId, version);
+        String pomLocation =  "/pom.xml";
         File file = new File("pomFile.xml");
         String repoURL = null;
         try {
@@ -171,6 +171,9 @@ public class TestPOM {
                         return dep.getVersion();
                     }
                 }
+                if(useParentPom) {
+                    return sharedDependencyVersion(false, artifact);
+                }
                 return "";
             }
 
@@ -185,6 +188,9 @@ public class TestPOM {
             model = read.read(new FileReader(file));
 
             if(model.getDependencyManagement() == null) {
+                if(useParentPom) {
+                    return sharedDependencyVersion(false, artifact);
+                }
                 return "";
             }
 
@@ -198,6 +204,9 @@ public class TestPOM {
         } catch (XmlPullParserException | IOException ignored) {
             System.out.println("Artifact: " + artifactId + ". Original repo URL: " + repoURL);
             System.out.println("Secondary Repo URL: " + pomURL);
+        }
+        if(useParentPom) {
+            return sharedDependencyVersion(false, artifact);
         }
         return null;
     }
@@ -260,11 +269,20 @@ public class TestPOM {
                 + "/maven-metadata.xml";
     }
 
-    private static String getPomFileURL(String groupId, String artifactId, String version) {
+    private static String getParentPomFileURL(String groupId, String artifactId, String version) {
+        artifactId += "-parent";
         String groupPath = groupId.replace('.', '/');
         return basePath + "/" + groupPath
                 + "/" + artifactId
                 + "/" + version
                 + "/" + artifactId + "-" + version + ".pom";
+    }
+
+    private static String getPomFileURL(String groupId, String artifactId, String version) {
+        String groupPath = groupId.replace('.', '/');
+        return basePath + "/" + groupPath
+            + "/" + artifactId
+            + "/" + version
+            + "/" + artifactId + "-" + version + ".pom";
     }
 }
