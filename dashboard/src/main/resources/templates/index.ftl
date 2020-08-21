@@ -100,14 +100,25 @@
 <script>
   const getCellValue = (tr, idx) => tr.children[idx].innerText || tr.children[idx].textContent;
 
+  // comparator for sorting
   const comparer = (columnHeader, idx, asc) => (a, b) => {
     return (function (v1, v2) {
       if (columnHeader === "google-cloud-bom" || columnHeader === "artifact-version"
           || columnHeader === "latest-released-version" || columnHeader
           === "google-cloud-shared-dependencies") {
-        //arrays of version numbers
-        let mavenVersion1 = v1.replace("-alpha", "").replace("-beta", "").split(".");
-        let mavenVersion2 = v2.replace("-alpha", "").replace("-beta", "").split(".");
+        // create arrays of version numbers
+        var mavenVersion1;
+        if (v1.indexOf("-") >= 0) {
+          mavenVersion1 = v1.substring(0, v1.indexOf("-")).split(".");
+        } else {
+          mavenVersion1 = v1.split(".");
+        }
+        var mavenVersion2;
+        if (v2.indexOf("-") >= 0) {
+          mavenVersion2 = v2.substring(0, v2.indexOf("-")).split(".");
+        } else {
+          mavenVersion2 = v2.split(".");
+        }
         for (let i = 0; i < mavenVersion1.length && i < mavenVersion2.length; i++) {
           if (isNaN(mavenVersion1[i]) || isNaN(mavenVersion2[i])) {
             return v1.toString().localeCompare(v2);
@@ -147,6 +158,8 @@
       if (input[i].length == 0) {
         continue;
       }
+      // by this point, our input is already split for us
+      // search for column keys (shortened or full name)
       let found = false;
       let checkSpecificColumn = input[i].indexOf(":") > -1;
       let col = checkSpecificColumn ? input[i].split(":")[0] : "";
@@ -187,17 +200,20 @@
     const input = document.getElementById("filterBar").value.toLowerCase();
     const table = document.getElementById("libraryVersions");
     const rows = table.getElementsByTagName("tr")
+    // if our input is empty, we should not filter anything
     if (input === "") {
       for (let i = 1; i < rows.length; i++) {
         rows[i].style.display = "";
       }
       return;
     }
+    // split the searchbar input by commas if present, or spaces otherwise
     const splitInput = input.indexOf(",") > -1 ? input.replace(/ /g, '').split(",") : input.split(
         " ");
     for (let i = 1; i < rows.length; i++) {
       const cols = rows[i].getElementsByTagName("td");
       let isDisplay = colsContainAllInput(cols, splitInput);
+      // remove a column's display if it does not match search bar input
       rows[i].style.display = isDisplay ? "" : "none";
     }
   }
